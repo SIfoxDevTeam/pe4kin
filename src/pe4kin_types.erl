@@ -20,6 +20,7 @@
                      | chosen_inline_result
                      | callback_query
                      | shipping_query
+                     | my_chat_member
                      | pre_checkout_query.
 
 %% @doc Detect incoming update type
@@ -33,11 +34,12 @@ update_type(#{<<"chosen_inline_result">> := _}) -> chosen_inline_result;
 update_type(#{<<"callback_query">> := _}) -> callback_query;
 update_type(#{<<"shipping_query">> := _}) -> shipping_query;
 update_type(#{<<"pre_checkout_query">> := _}) -> pre_checkout_query;
+update_type(#{<<"my_chat_member">> := _}) -> my_chat_member;
 update_type(#{}) -> undefined.
 
 -spec chat_id(update_type(), pe4kin:update()) -> {ok, pe4kin:chat_id()} | undefined.
 chat_id(UpdType, Update) ->
-    case lists:member(UpdType, [message, edited_message, channel_post,
+    case lists:member(UpdType, [message, edited_message, channel_post, my_chat_member,
                                edited_channel_post]) of
         true ->
             {ok, #{<<"chat">> := #{<<"id">> := ChatId}}} = object(UpdType, Update),

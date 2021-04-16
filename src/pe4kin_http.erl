@@ -107,7 +107,7 @@ encode_disposition({Disposition, Params}) ->
 start_pool() ->
     {ok, Opts} = pe4kin:get_env(keepalive_pool),
     PoolOpts = [{name, ?MODULE},
-                {start_mfa, {?MODULE, open, []}}
+                {start_mfa, {pe4kin_gun_srv, start_link, []}}
                | Opts],
     {ok, _Pid} = pooler:new_pool(PoolOpts).
 
@@ -136,7 +136,7 @@ with_conn(Fun) ->
     (C =/= error_no_members)
         orelse error(pool_overflow),
     Res =
-        try Fun(C)
+        try Fun(pe4kin_gun_srv:get_gun_conn(C))
         catch Err:Reason:Stack ->
                 pooler:return_member(?MODULE, C, fail),
                 erlang:raise(Err, Reason, Stack)

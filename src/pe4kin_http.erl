@@ -26,7 +26,8 @@ open() ->
     open(Transport, Host, Port).
 
 open(Transport, Host, Port) ->
-    {ok, Pid} = gun:open(Host, Port, #{transport => Transport}),
+    {ok, Opts} = pe4kin:get_env(api_server_conn_opts),
+    {ok, Pid} = gun:open(Host, Port, Opts#{transport => Transport}),
     _Protocol = gun:await_up(Pid),
     {ok, Pid}.
 

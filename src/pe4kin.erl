@@ -15,6 +15,8 @@
          get_updates_sync/2]).
 -export([get_env/1, get_env/2]).
 
+-include_lib("hut/include/hut.hrl").
+
 -export_type([bot_name/0, chat_id/0, update/0]).
 -export_type([json_object/0, json_value/0]).
 
@@ -160,7 +162,7 @@ download_file(Bot, #{<<"file_id">> := _,
     Endpoint = get_env(api_server_endpoint, <<"https://api.telegram.org">>),
     Token = get_token(Bot),
     Url = <<Endpoint/binary, "/file/bot", Token/binary, "/", FilePath/binary>>,
-    {ok, 200, Headers, Body} = do_api_call(Url, undefined),
+    {ok, 200, Headers, Body} = do_api_call_retry(Url, undefined, 0),
     {ok, Headers, Body}.
 
 
@@ -176,7 +178,7 @@ api_call(Bot, Method, Payload) ->
 
 api_call({_ApiServerEndpoint, Token}, _Bot, Method, Payload) ->
     Url = <<"/bot", Token/binary, "/", Method/binary>>,
-    case do_api_call(Url, Payload) of
+    case do_api_call_retry(Url, Payload, 0) of
         {Code, Hdrs, Body} ->
             ContentType = cow_http_hd:parse_content_type(
                             proplists:get_value(<<"content-type">>, Hdrs)),
@@ -194,6 +196,22 @@ api_call({_ApiServerEndpoint, Token}, _Bot, Method, Payload) ->
         {error, ErrReason} -> {error, http, ErrReason}
     end.
 
+do_api_call_retry(Url, Payload, N) ->
+    case catch do_api_call(Url, Payload) of
+        {error, _Error} = Err ->
+            case N >= pe4kin:get_env(tg_api_call_retry, 5) of
+                true ->
+                    ?log(error, "no more retries error:~p do_api_call:~p", [Err, Payload]),
+                    Err;
+                false ->
+                    ?log(warning, "error:~p do_api_call:~p", [Err, Payload]),
+                    Sleep = pe4kin:get_env(tg_api_call_retry_interval, 3000),
+                    timer:sleep(Sleep * (N + 1)),
+                    do_api_call_retry(Url, Payload, N + 1)
+            end;
+        Result ->
+            Result
+    end.
 
 do_api_call(Url, undefined) ->
     pe4kin_http:get(Url);

@@ -3,7 +3,7 @@
 -module(pe4kin_http).
 
 -export([start_pool/0, stop_pool/0]).
--export([open/0, open/3, get/1, post/3]).
+-export([open/0, open/2, get/1, post/3]).
 
 -type response() :: {non_neg_integer(), [{binary(), binary()}], iodata()}.
 -type path() :: iodata().
@@ -21,15 +21,30 @@
                     {multipart, multipart()}.
 
 open() ->
-    {ok, Endpoint} = pe4kin:get_env(api_server_endpoint),
-    {Transport, Host, Port} = parse_endpoint(Endpoint),
-    open(Transport, Host, Port).
+  {ok, Endpoint} = pe4kin:get_env(api_server_endpoint),
+  case pe4kin:get_env(api_server_proxy_endpoint) of
+    undefined ->
+      {ok, Opts} = pe4kin:get_env(api_server_conn_opts),
+      open(Endpoint, Opts);
+    {ok, ProxyEndpoint} ->
+      {ok, Opts} = pe4kin:get_env(api_proxy_server_conn_opts),
+      {ok, Pid} = open(ProxyEndpoint, Opts),
+      {response, fin, 200, _} = connect(Endpoint, Pid),
+      {ok, Pid}
+  end.
 
-open(Transport, Host, Port) ->
-    {ok, Opts} = pe4kin:get_env(api_server_conn_opts),
-    {ok, Pid} = gun:open(Host, Port, Opts#{transport => Transport}),
-    _Protocol = gun:await_up(Pid),
-    {ok, Pid}.
+open(Endpoint, Opts) ->
+  {Transport, Host, Port} = parse_endpoint(Endpoint),
+  {ok, Pid} = gun:open(Host, Port, Opts#{transport => Transport}),
+  _Protocol = gun:await_up(Pid),
+  {ok, Pid}.
+
+connect(Endpoint, Pid) ->
+  {Transport, Host, Port} = parse_endpoint(Endpoint),
+  {ok, OrigOpts} = pe4kin:get_env(api_server_conn_opts),
+  Opts = maps:merge(#{host => Host, port => Port, transport => Transport}, OrigOpts),
+  Ref = gun:connect(Pid, Opts),
+  gun:await(Pid, Ref).
 
 -spec get(iodata()) -> response() | {error, any()}.
 get(Path) ->

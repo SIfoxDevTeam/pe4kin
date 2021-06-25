@@ -22,7 +22,7 @@
 
 open() ->
   {ok, Endpoint} = pe4kin:get_env(api_server_endpoint),
-  case pe4kin:get_env(api_server_proxy_endpoint) of
+  case pe4kin:get_env(api_proxy_server_endpoint) of
     undefined ->
       {ok, Opts} = pe4kin:get_env(api_server_conn_opts),
       open(Endpoint, Opts);

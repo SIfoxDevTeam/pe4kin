@@ -208,7 +208,6 @@ do_start_http_poll(Opts, #state{token=Token, active=false, method_state = #{pid 
                     || {Key, Val} <- maps:to_list(Opts1)]),
     Url = <<"/bot", Token/binary, "/getUpdates?", QS/binary>>,
     Ref = gun:get(Pid, Url),
-    ?log(debug, "Long poll ~s", [Url]),
     State#state{%% method = longpoll,
       active = true,
       method_state = #{pid => Pid,

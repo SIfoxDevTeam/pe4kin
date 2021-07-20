@@ -201,10 +201,10 @@ do_api_call_retry(Url, Payload, N) ->
         {error, _Error} = Err ->
             case N >= pe4kin:get_env(tg_api_call_retry, 5) of
                 true ->
-                    ?log(error, "no more retries error:~p do_api_call:~p", [Err, Payload]),
+                    ?log(error, "do_api_call: no more retries error:~p", [Err]),
                     Err;
                 false ->
-                    ?log(warning, "error:~p do_api_call:~p", [Err, Payload]),
+                    ?log(warning, "do_api_call: error:~p", [Err]),
                     Sleep = pe4kin:get_env(tg_api_call_retry_interval, 3000),
                     timer:sleep(Sleep * (N + 1)),
                     do_api_call_retry(Url, Payload, N + 1)

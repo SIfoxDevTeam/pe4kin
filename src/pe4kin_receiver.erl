@@ -46,7 +46,11 @@
           subscribers :: #{pid() => reference()},
           monitors :: #{reference() => pid()},
           ulen :: non_neg_integer(),
-          updates :: queue:queue()
+          updates :: queue:queue(),
+          last_response_ts = 0 :: pos_integer(),
+          watchdog_interval = undefined :: pos_integer(),
+          watchdog_timer = undefined :: reference(),
+          watchdog_threshold :: integer()
         }).
 
 
@@ -94,6 +98,7 @@ start_link(Bot, Token, Opts) ->
 
 
 init([Bot, Token, Opts]) ->
+    ?log(debug, "start pe4kin_receiver", []),
     {ok, #state{name = Bot,
                 token = Token,
                 active = false,
@@ -101,18 +106,31 @@ init([Bot, Token, Opts]) ->
                 monitors = #{},
                 ulen = 0,
                 updates = queue:new(),
+                last_response_ts = erlang:system_time(milli_seconds),
                 buffer_edge_size = maps:get(buffer_edge_size, Opts, 1000)}}.
 
 handle_call({start_http_poll, _, Opts}, _From, #state{method = undefined, active = false} = State) ->
+    WDInterval = pe4kin:get_env(receiver_watchdog_interval, 0),
+    WDTimer =
+        case WDInterval =:= 0 orelse State#state.watchdog_timer =/= undefined of
+            true -> State#state.watchdog_timer;
+            _ -> erlang:send_after(WDInterval, self(), watchdog_check)
+        end,
     State1 = do_start_http_poll(Opts, State),
     MOpts = maps:remove(offset, Opts),
-    {reply, ok, State1#state{method_opts = MOpts, method = longpoll}};
+    {reply, ok, State1#state{
+        watchdog_threshold = pe4kin:get_env(receiver_watchdog_threshold, 300000),
+        watchdog_interval = WDInterval,
+        watchdog_timer = WDTimer,
+        method_opts = MOpts,
+        method = longpoll}};
 handle_call({stop_http_poll, _}, _From, #state{method = longpoll, active = Active} = State) ->
     State1 = case Active of
                  true -> do_stop_http_poll(State);
                  false -> State
              end,
-    {reply, ok, State1#state{method = undefined}};
+    do_cancel_timer(State#state.watchdog_timer),
+    {reply, ok, State1#state{method = undefined, watchdog_timer = undefined}};
 handle_call(webhook___TODO, _From, State) ->
     Reply = ok,
     {reply, Reply, State};
@@ -159,7 +177,7 @@ handle_info({gun_response, Pid, Ref, IsFin, Status, Headers}, #state{method_stat
                 Err
         end,
     State1 = handle_http_poll_msg(WithBody, State),
-    {noreply, invariant(State1)};
+    {noreply, invariant(State1#state{last_response_ts = erlang:system_time(milli_seconds)})};
 handle_info({gun_response, Ref, Msg}, #state{method_state=MState} = State) ->
     ?log(warning, "Unexpected http msg ~p, ~p; state ~p", [Ref, Msg, MState]),
     {noreply, State};
@@ -173,6 +191,16 @@ handle_info({'DOWN', Ref, process, Pid, _Reason}, #state{subscribers=Subs, monit
     {noreply,
      State#state{subscribers = maps:remove(Pid, Subs),
                  monitors = maps:remove(Ref, Mons)}};
+handle_info(watchdog_check, #state{watchdog_interval = WDInterval, watchdog_threshold = Threshold, last_response_ts = LastRespTS} = State) ->
+    do_cancel_timer(State#state.watchdog_timer),
+    case erlang:system_time(milli_seconds) - LastRespTS > Threshold of
+        true ->
+            ?log(warning, "last_response_ts is too old ~p; now ~p, state ~p", [LastRespTS, erlang:system_time(milli_seconds), State]),
+            {stop, last_response_ts_too_old, State};
+        false ->
+            WDTimer = erlang:send_after(WDInterval, self(), watchdog_check),
+            {noreply, State#state{watchdog_timer = WDTimer}}
+    end;
 handle_info(Info, State) ->
     ?log(warning, "Unexpected info msg ~p; state ~p", [Info, State]),
     {noreply, State}.
@@ -208,6 +236,7 @@ do_start_http_poll(Opts, #state{token=Token, active=false, method_state = #{pid 
                     || {Key, Val} <- maps:to_list(Opts1)]),
     Url = <<"/bot", Token/binary, "/getUpdates?", QS/binary>>,
     Ref = gun:get(Pid, Url),
+    pe4kin:get_env(receiver_debug_long_poll, false) andalso ?log(debug, "Long poll ~s", [Url]),
     State#state{%% method = longpoll,
       active = true,
       method_state = #{pid => Pid,
@@ -230,7 +259,7 @@ handle_http_poll_msg({200, _Headers, Body},
 handle_http_poll_msg({Status, _, _},
                      #state{method_state = #{pid := Pid} = MState, name = Name} = State) ->
     gun:close(Pid),
-    ?log(warning, "Bot ~p: longpool bad status ~p when state ~p", [Name, Status, MState]),
+    ?log(warning, "Bot ~p: longpoll bad status ~p when state ~p", [Name, Status, MState]),
     State#state{method_state = undefined, active=false};
 handle_http_poll_msg({error, Reason}, #state{method_state = #{pid := Pid} = MState, name=Name} = State) ->
     gun:close(Pid),
@@ -287,3 +316,6 @@ invariant(
                                                  and (Method =/= undefined) ->
     invariant(pause_get_updates(State));
 invariant(State) -> State.
+
+do_cancel_timer(undefined) -> ok;
+do_cancel_timer(Timer) -> erlang:cancel_timer(Timer).

@@ -80,11 +80,11 @@ post(Path, Headers0, {multipart, Multipart}) ->
 
 
 await(C, Ref) ->
-    case gun:await(C, Ref) of
+    case gun:await(C, Ref, pe4kin:get_env(http_timeout, 5000)) of
         {response, fin, Status, Headers} ->
             {Status, Headers, []};
         {response, nofin, Status, Headers} ->
-            {ok, Body} = gun:await_body(C, Ref),
+            {ok, Body} = gun:await_body(C, Ref, pe4kin:get_env(http_timeout, 5000)),
             {Status, Headers, Body};
         {error, _} = Err ->
             Err

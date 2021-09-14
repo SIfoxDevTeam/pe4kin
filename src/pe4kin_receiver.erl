@@ -53,7 +53,6 @@
           watchdog_threshold :: integer()
         }).
 
-
 -spec start_http_poll(pe4kin:bot_name(),
                         #{offset => integer(),
                           limit => 1..100,
@@ -187,6 +186,10 @@ handle_info({gun_error, Pid, Ref, Reason}, #state{method_state=#{ref := Ref, pid
 handle_info({gun_error, Pid, Reason}, #state{method_state=#{pid := Pid}} = State) ->
     State1 = handle_http_poll_msg({error, Reason}, State),
     {noreply, invariant(State1)};
+%% when TG server send HTTP reply with Connection: Close header
+%% then gun is down and pe4kin should restart http long polling
+handle_info({gun_down, _Pid, http, normal, _KilledStreams, _UnprocessedStreams}, State) ->
+    {noreply, invariant(State#state{method_state=undefined, active=false})};
 handle_info({'DOWN', Ref, process, Pid, _Reason}, #state{subscribers=Subs, monitors = Mons} = State) ->
     {noreply,
      State#state{subscribers = maps:remove(Pid, Subs),
@@ -243,7 +246,7 @@ do_start_http_poll(Opts, #state{token=Token, active=false, method_state = #{pid 
                        ref => Ref,
                        state => start}};
 do_start_http_poll(Opts, #state{active=false, method_state = undefined} = State) ->
-    {ok, Pid} = pe4kin_http:open(),
+    {ok, Pid} = pe4kin_http:open(),  %% TBD sometimes open may fail
     do_start_http_poll(Opts, State#state{method_state = #{pid => Pid}}).
 
 do_stop_http_poll(#state{active=true, method=longpoll,

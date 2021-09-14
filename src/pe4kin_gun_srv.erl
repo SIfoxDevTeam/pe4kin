@@ -46,7 +46,7 @@ handle_cast(Msg, State) ->
 
 handle_info({gun_down, _Pid, _Protocol, Reason, _KilledStreams, _UnprocessedStreams}, State) ->
     ?log(debug, "gun_down Reason ~p", [Reason]),
-    {noreply, State};
+    {stop, gun_down, State};
 handle_info({gun_up, Pid, _}, State) ->
     ?log(debug, "gun_up", []),
     {noreply, State#state{conn = Pid}};

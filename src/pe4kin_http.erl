@@ -29,6 +29,8 @@ open() ->
     {ok, ProxyEndpoint} ->
       {ok, Opts} = pe4kin:get_env(api_proxy_server_conn_opts),
       {ok, Pid} = open(ProxyEndpoint, Opts),
+      %% TBD connect may fail and return for example {response,
+      %% nofin,503, _Headers} and other Status codes
       {response, fin, 200, _} = connect(Endpoint, Pid),
       {ok, Pid}
   end.

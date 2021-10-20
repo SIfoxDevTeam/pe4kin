@@ -17,7 +17,9 @@
      [{init_count, 1},
       {max_count, 10},
       {cull_interval, {1, min}},
-      {max_age, {2, min}}]}
+      {max_age, {2, min}},
+      {stop_mfa, {pe4kin_gun_srv, stop_worker, ['$pooler_pid']}}
+     ]}
    ]},
   {modules, []},
 

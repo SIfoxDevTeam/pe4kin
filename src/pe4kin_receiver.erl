@@ -190,6 +190,9 @@ handle_info({gun_error, Pid, Reason}, #state{method_state=#{pid := Pid}} = State
 %% then gun is down and pe4kin should restart http long polling
 handle_info({gun_down, _Pid, http, normal, _KilledStreams, _UnprocessedStreams}, State) ->
     {noreply, invariant(State#state{method_state=undefined, active=false})};
+%% sometimes receive gun_down, http, closed
+handle_info({gun_down, _Pid, http, closed, _KilledStreams, _UnprocessedStreams}, State) ->
+    {noreply, invariant(State#state{method_state=undefined, active=false})};
 handle_info({'DOWN', Ref, process, Pid, _Reason}, #state{subscribers=Subs, monitors = Mons} = State) ->
     {noreply,
      State#state{subscribers = maps:remove(Pid, Subs),
@@ -245,9 +248,16 @@ do_start_http_poll(Opts, #state{token=Token, active=false, method_state = #{pid 
       method_state = #{pid => Pid,
                        ref => Ref,
                        state => start}};
+
+%% TBD sometimes open may fail
 do_start_http_poll(Opts, #state{active=false, method_state = undefined} = State) ->
-    {ok, Pid} = pe4kin_http:open(),  %% TBD sometimes open may fail
-    do_start_http_poll(Opts, State#state{method_state = #{pid => Pid}}).
+    case pe4kin_http:open() of
+        {ok, Pid} -> do_start_http_poll(Opts, State#state{method_state = #{pid => Pid}});
+        {error, Reason} ->
+            ?log(warning, "Connection open fail with reason ~p", [Reason]),
+            timer:sleep(5000),
+            do_start_http_poll(Opts, State)
+    end.
 
 do_stop_http_poll(#state{active=true, method=longpoll,
                          method_state=#{ref := Ref, pid := Pid}} = State) ->
